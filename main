@@ -1,0 +1,163 @@
+import torch
+import numpy as np
+import pandas as pd
+
+from torch.utils.data import DataLoader, Dataset
+import torch.nn.functional as F
+from torch import nn
+
+
+
+from torch.utils.tensorboard import SummaryWriter
+random_seed = 123
+torch.manual_seed(random_seed)
+
+class Mydataset(Dataset):
+    def __init__(self, is_train_set=True):
+        self.filename = r'E:\python_xunliang.xls'
+        data_P = pd.read_excel(self.filename, sheet_name='Sheet1')
+        data_I = pd.read_excel(self.filename, sheet_name='Sheet2')
+        data_U = pd.read_excel(self.filename, sheet_name='Sheet3')
+        label = pd.read_excel(self.filename, sheet_name='Sheet4')
+        # 转成numpy
+        if is_train_set:
+            self.data_P = torch.tensor(np.array(data_P[:3998][:]), dtype=torch.float32)
+            self.data_I = torch.tensor(np.array(data_I[:3998][:]), dtype=torch.float32)
+            self.data_U = torch.tensor(np.array(data_U[:3998][:]), dtype=torch.float32)
+            self.label = torch.tensor(np.array(label[:3998][0]), dtype=torch.long).reshape(-1)
+        else:
+            self.data_P = torch.tensor(np.array(data_P[-200:][:]), dtype=torch.float32)
+            self.data_I = torch.tensor(np.array(data_I[-200:][:]), dtype=torch.float32)
+            self.data_U = torch.tensor(np.array(data_U[-200:][:]), dtype=torch.float32)
+            self.label = torch.tensor(np.array(label[-200:][0]), dtype=torch.float32).reshape(-1)
+
+
+    #获取键值对，country(key)-index(value)
+    def __getitem__(self, index):
+        # seq * b * feature
+        data_P = self.data_P[index][:].t()
+        data_I = self.data_I[index][:].t()
+        data_U = self.data_U[index][:].t()
+        return torch.stack([data_P, data_I, data_U], dim=1), self.label[index]
+
+    def __len__(self):
+        return self.data_P.shape[0]
+
+BATCH_SIZE = 200
+device = torch.device("cuda:0")
+HIDDEN_SIZE = 128
+N_LAYER = 3
+IN_FEATURE = 3
+BIDIRECTIONAL = True
+lr = 0.001
+
+
+class RNN_xiugai(nn.Module):
+    def __init__(self, in_feature=IN_FEATURE, hidden_feature=HIDDEN_SIZE, num_layers=N_LAYER
+                 , bidirectional=BIDIRECTIONAL):
+        super(RNN_xiugai, self).__init__()
+        self.hidden_size = hidden_feature
+        self.n_layers = num_layers
+        self.n_directions = 2 if bidirectional else 1
+        self.in_feature = in_feature
+
+        self.attention = nn.TransformerEncoderLayer(d_model=3, nhead=1)
+        self.rnn = nn.LSTM(input_size=self.in_feature, hidden_size=self.hidden_size,
+                           num_layers=self.n_layers, bidirectional=bidirectional, dropout=0.5)
+
+        self.classifier_1 = nn.Linear(self.hidden_size * self.n_directions, 90)
+        self.classifier_2 = nn.Linear(90, 32)
+        self.classifier_3 = nn.Linear(32, 6)
+        self.dropout = nn.Dropout(p=0.5)
+
+    def _init_hidden(self, batch_size):
+        hidden = torch.zeros(self.n_layers * self.n_directions, batch_size, self.in_feature)
+        return hidden
+
+    def forward(self, x):
+        # 32 240 3-> 240 32 3
+        x = x.permute(1,0,2)
+        x = self.attention(x)
+        output, (hn, cn) = self.rnn(x)
+    
+
+        if self.n_directions == 2:
+            hidden_cat = torch.cat([hn[-1], hn[-2]], dim=1)
+        else:
+            hidden_cat = hn[-1]
+        out = self.dropout(F.relu(hidden_cat))
+        out = self.dropout(F.relu(self.classifier_1(out)))
+        out = self.dropout(F.relu(self.classifier_2(out)))
+        out = F.relu(self.classifier_3(out))
+        # out = torch.relu(self.classifier_1(out))
+        # out = torch.sigmoid(self.classifier_2(out))
+        # out = self.classifier_3(out)
+        return out
+
+
+
+# 数据集定义
+Dataset_train = Mydataset(is_train_set=True)
+Dataset_test = Mydataset(is_train_set=False)
+loader_train = DataLoader(Dataset_train, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
+loader_test = DataLoader(Dataset_test, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
+
+model = RNN_xiugai(in_feature=IN_FEATURE, hidden_feature=HIDDEN_SIZE, num_layers=N_LAYER
+                 , bidirectional=BIDIRECTIONAL)
+
+model = model.to(device)
+loss_fn = nn.CrossEntropyLoss()
+loss_fn = loss_fn.to(device)
+optim = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=0.0001)
+epochs = 3000
+total_iteration = 0
+writer = SummaryWriter("blistm")
+total = 200
+
+
+
+if __name__ == '__main__':
+    for epoch in range(epochs):   
+        model.train()
+        for batchidx, (x,y) in enumerate(loader_train, start=0):
+            x = x.to(device)
+            y = y.to(device)
+            outputs = model(x)
+            loss = loss_fn(outputs, y)
+            optim.zero_grad()
+            loss.backward()
+            optim.step()
+            writer.add_scalar("loss", loss, total_iteration)
+            total_iteration += 1
+            if batchidx == 0:
+                print(f"{epoch}/{epochs} loss:{loss.item():.4f} total_iteration:{total_iteration} ")
+        model.eval()
+        with torch.no_grad():
+            train_correct = 0
+            train_total = 3998
+            acc_train = 0
+            for x, y in loader_train:
+                x = x.to(device)
+                y = y.to(device)
+                outputs = model(x)
+                pred = outputs.argmax(dim=1)
+                train_correct += torch.eq(pred, y).sum().float().item()
+            acc_train = train_correct/train_total
+
+
+            correct = 0
+            acc = 0
+            acc_new = 0
+            for x, y in loader_test:
+                x = x.to(device)
+                y = y.to(device)
+                outputs = model(x)
+                pred = outputs.argmax(dim=1)
+                correct += torch.eq(pred, y).sum().float().item()
+            acc_new = correct/total
+            print(f"train acc : {acc_train:.4f} test acc : {acc_new:.4f}")
+            if acc_new > acc:
+                torch.save(model, f"./acc./acc{acc_new:.4f}.pt")
+                acc = acc_new
+        writer.add_scalar("acc", acc, epoch)
+    writer.close()
