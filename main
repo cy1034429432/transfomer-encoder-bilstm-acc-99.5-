@@ -21,9 +21,9 @@ class Mydataset(Dataset):
         label = pd.read_excel(self.filename, sheet_name='Sheet4')
         # 转成numpy
         if is_train_set:
-            self.data_P = torch.tensor(np.array(data_P[:3998][:]), dtype=torch.float32)
-            self.data_I = torch.tensor(np.array(data_I[:3998][:]), dtype=torch.float32)
-            self.data_U = torch.tensor(np.array(data_U[:3998][:]), dtype=torch.float32)
+            self.data_P = torch.tensor(np.array(data_P[:3798][:]), dtype=torch.float32)
+            self.data_I = torch.tensor(np.array(data_I[:3798][:]), dtype=torch.float32)
+            self.data_U = torch.tensor(np.array(data_U[:3798][:]), dtype=torch.float32)
             self.label = torch.tensor(np.array(label[:3998][0]), dtype=torch.long).reshape(-1)
         else:
             self.data_P = torch.tensor(np.array(data_P[-200:][:]), dtype=torch.float32)
@@ -32,7 +32,7 @@ class Mydataset(Dataset):
             self.label = torch.tensor(np.array(label[-200:][0]), dtype=torch.float32).reshape(-1)
 
 
-    #获取键值对，country(key)-index(value)
+    #country(key)-index(value)
     def __getitem__(self, index):
         # seq * b * feature
         data_P = self.data_P[index][:].t()
@@ -96,7 +96,7 @@ class RNN_xiugai(nn.Module):
 
 
 
-# 数据集定义
+# Dataset
 Dataset_train = Mydataset(is_train_set=True)
 Dataset_test = Mydataset(is_train_set=False)
 loader_train = DataLoader(Dataset_train, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
