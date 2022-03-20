@@ -85,9 +85,9 @@ class RNN_xiugai(nn.Module):
             hidden_cat = torch.cat([hn[-1], hn[-2]], dim=1)
         else:
             hidden_cat = hn[-1]
-        out = self.dropout(F.relu(hidden_cat))
-        out = self.dropout(F.relu(self.classifier_1(out)))
-        out = self.dropout(F.relu(self.classifier_2(out)))
+        out = self.dropout(F.selu(hidden_cat))
+        out = self.dropout(F.selu(self.classifier_1(out)))
+        out = self.dropout(F.selu(self.classifier_2(out)))
         out = F.relu(self.classifier_3(out))
         # out = torch.relu(self.classifier_1(out))
         # out = torch.sigmoid(self.classifier_2(out))
