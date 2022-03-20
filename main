@@ -19,7 +19,7 @@ class Mydataset(Dataset):
         data_I = pd.read_excel(self.filename, sheet_name='Sheet2')
         data_U = pd.read_excel(self.filename, sheet_name='Sheet3')
         label = pd.read_excel(self.filename, sheet_name='Sheet4')
-        # 转成numpy
+        
         if is_train_set:
             self.data_P = torch.tensor(np.array(data_P[:3798][:]), dtype=torch.float32)
             self.data_I = torch.tensor(np.array(data_I[:3798][:]), dtype=torch.float32)
